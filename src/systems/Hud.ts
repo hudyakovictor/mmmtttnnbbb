@@ -38,7 +38,7 @@ export class Hud {
     private readonly track: Track,
   ) {}
 
-  setMode(mode: 'menu' | 'pause' | 'ride' | 'fail' | 'win'): void {
+  setMode(mode: 'menu' | 'pause' | 'ride' | 'crash' | 'fail' | 'win'): void {
     this.overlay.classList.toggle('hidden', mode !== 'menu');
     this.pause.classList.toggle('hidden', mode !== 'pause');
     this.fail.classList.toggle('hidden', mode !== 'fail');

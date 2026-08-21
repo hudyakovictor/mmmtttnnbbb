@@ -133,6 +133,28 @@ export function makeNumberPlate(): THREE.CanvasTexture {
   return t;
 }
 
+export function makeCloudTexture(seed = 41): THREE.CanvasTexture {
+  const { c, g } = canvas(256);
+  const rng = createSeededRandom(seed);
+  g.fillStyle = '#30343a';
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 46; i += 1) {
+    const x = rng() * 256;
+    const y = rng() * 256;
+    const r = 18 + rng() * 46;
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(235,240,248,${0.34 + rng() * 0.3})`);
+    grad.addColorStop(1, 'rgba(235,240,248,0)');
+    g.fillStyle = grad;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.needsUpdate = true;
+  return t;
+}
+
 export function makeGradientMap(): THREE.CanvasTexture {
   const { c, g } = canvas(8);
   const grd = g.createLinearGradient(0, 0, 8, 0);

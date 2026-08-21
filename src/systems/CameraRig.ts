@@ -1,14 +1,19 @@
 import * as THREE from 'three';
 import type { SimState } from './BikeSim';
+import type { Track } from '../world/Track';
 
 export class CameraRig {
   private readonly desired = new THREE.Vector3();
   private readonly look = new THREE.Vector3();
   private readonly up = new THREE.Vector3(0, 1, 0);
+  private readonly tmp = new THREE.Vector3();
   private fovPunch = 0;
   private readonly baseFov: number;
 
-  constructor(private readonly camera: THREE.PerspectiveCamera) {
+  constructor(
+    private readonly camera: THREE.PerspectiveCamera,
+    private readonly track: Track,
+  ) {
     this.baseFov = camera.fov;
   }
 
@@ -30,9 +35,17 @@ export class CameraRig {
       .addScaledVector(fwd, -back)
       .addScaledVector(this.up, height)
       .addScaledVector(right, state.lean * 0.45);
-    this.look.copy(state.pos)
-      .addScaledVector(fwd, 8.5 + speed * 0.28)
-      .addScaledVector(this.up, 0.45);
+
+    // Lookahead along the SPLINE (not just the velocity vector) so the camera
+    // starts turning into the next apex before the bike does.
+    const lookS = THREE.MathUtils.clamp(state.s + 0.035 + speed * 0.0011, 0, 0.99);
+    const ahead = this.track.sampleAt(lookS);
+    this.look
+      .copy(ahead.position)
+      .addScaledVector(this.up, 0.5 + speed * 0.008);
+    // Blend with a forward point so we never stare at a hairpin mid-corner.
+    this.tmp.copy(state.pos).addScaledVector(fwd, 8.5 + speed * 0.28).addScaledVector(this.up, 0.45);
+    this.look.lerp(this.tmp, 0.35);
 
     const lag = reducedMotion ? 1 : 1 - Math.exp(-delta / 0.12);
     this.camera.position.lerp(this.desired, lag);
@@ -56,6 +69,10 @@ export class ShakeRig {
 
   add(amount: number): void {
     this.trauma = Math.min(1, this.trauma + amount);
+  }
+
+  get level(): number {
+    return this.trauma;
   }
 
   update(delta: number, camera: THREE.PerspectiveCamera, reduced: boolean): void {

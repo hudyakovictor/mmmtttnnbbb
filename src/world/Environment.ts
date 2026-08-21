@@ -19,6 +19,7 @@ export class Environment {
   private readonly dummy = new THREE.Object3D();
   private readonly treeMat: THREE.MeshStandardMaterial;
   private readonly windMats: THREE.MeshStandardMaterial[] = [];
+  private waterUniforms: { uTime: { value: number } } | null = null;
 
   constructor(
     track: Track,
@@ -93,11 +94,11 @@ export class Environment {
     this.group.add(trunks, canopy);
 
     const rockGeo = new THREE.DodecahedronGeometry(0.45, 0);
-    this.rocks = new THREE.InstancedMesh(rockGeo, mats.rock, 90);
+    this.rocks = new THREE.InstancedMesh(rockGeo, mats.rock, 150);
     this.rocks.castShadow = true;
     this.rocks.receiveShadow = true;
     let ri = 0;
-    for (let i = 0; i < track.points.length && ri < 90; i += 5) {
+    for (let i = 0; i < track.points.length && ri < 150; i += 3) {
       const p = track.points[i];
       if (p.feature !== 'rockgarden' && p.feature !== 'drop' && rng() > 0.35) continue;
       const lat = (rng() - 0.5) * (p.width + 1.4);
@@ -114,6 +115,35 @@ export class Environment {
     }
     this.rocks.count = ri;
     this.group.add(this.rocks);
+
+    // Midground bushes: instanced blobs that thicken the corridor walls.
+    const bushGeo = new THREE.IcosahedronGeometry(1, 0);
+    bushGeo.scale(1, 0.62, 1);
+    const bushMat = new THREE.MeshStandardMaterial({ color: 0x2e4428, roughness: 0.92, metalness: 0 });
+    const bushCount = Math.floor(260 * treeScale);
+    const bushes = new THREE.InstancedMesh(bushGeo, bushMat, bushCount);
+    bushes.castShadow = true;
+    bushes.receiveShadow = true;
+    let bi = 0;
+    for (let i = 0; i < 2400 && bi < bushCount; i += 1) {
+      const p = track.points[Math.floor(rng() * track.points.length)];
+      const side = rng() < 0.5 ? -1 : 1;
+      const lat = side * (p.width * 0.5 + 1.3 + rng() * 6.5);
+      if (Math.abs(lat) < p.width * 0.5 + 1.1) continue;
+      const x = p.position.x + p.binormal.x * lat;
+      const z = p.position.z + p.binormal.z * lat;
+      const h = track.height(x, z);
+      if (h.trail > 0.3) continue;
+      const s = 0.5 + rng() * 0.9;
+      this.dummy.position.set(x, h.y + s * 0.3, z);
+      this.dummy.rotation.set(0, rng() * Math.PI * 2, 0);
+      this.dummy.scale.set(s, s * (0.7 + rng() * 0.5), s);
+      this.dummy.updateMatrix();
+      bushes.setMatrixAt(bi, this.dummy.matrix);
+      bi += 1;
+    }
+    bushes.count = bi;
+    this.group.add(bushes);
 
     if (useGrass) {
       const grassGeo = new THREE.PlaneGeometry(0.28, 0.42);
@@ -139,6 +169,35 @@ export class Environment {
       }
       this.grass.count = gi;
       this.group.add(this.grass);
+
+      // Ferns: crossed quads near the root section and the river bank.
+      const fernMat = new THREE.MeshStandardMaterial({
+        color: 0x3a5430,
+        roughness: 0.85,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      });
+      const fernGeo = new THREE.PlaneGeometry(0.34, 0.3, 3, 1);
+      const fernCount = 150;
+      const ferns = new THREE.InstancedMesh(fernGeo, fernMat, fernCount);
+      let fi = 0;
+      for (let i = 0; i < 900 && fi < fernCount; i += 1) {
+        const p = track.points[Math.floor(rng() * track.points.length)];
+        if (p.feature !== 'roots' && rng() > 0.25) continue;
+        const lat = (rng() - 0.5) * (p.width + 4.5);
+        if (Math.abs(lat) < p.width * 0.42) continue;
+        const x = p.position.x + p.binormal.x * lat;
+        const z = p.position.z + p.binormal.z * lat;
+        const h = track.height(x, z);
+        this.dummy.position.set(x, h.y + 0.1, z);
+        this.dummy.rotation.set(-0.15, rng() * Math.PI, -0.1);
+        this.dummy.scale.setScalar(0.8 + rng() * 0.7);
+        this.dummy.updateMatrix();
+        ferns.setMatrixAt(fi, this.dummy.matrix);
+        fi += 1;
+      }
+      ferns.count = fi;
+      this.group.add(ferns);
     } else {
       this.grass = null;
     }
@@ -149,6 +208,7 @@ export class Environment {
       const shader = mat.userData.shader as { uniforms: { uTime: { value: number } } } | undefined;
       if (shader) shader.uniforms.uTime.value = time;
     }
+    if (this.waterUniforms) this.waterUniforms.uTime.value = time;
     for (const b of this.beacons) {
       b.rotation.y = time * 1.4;
       const m = b.material as THREE.MeshStandardMaterial;
@@ -214,13 +274,54 @@ export class Environment {
 
   private addRiver(track: Track, mats: MaterialLibrary): void {
     const p = track.points[Math.floor(track.points.length * 0.5)];
-    const water = new THREE.Mesh(new THREE.PlaneGeometry(18, 7, 8, 4), mats.water);
-    water.rotation.x = -Math.PI / 2;
-    water.position.copy(p.position).add(new THREE.Vector3(0, -0.35, 0));
-    water.lookAt(p.position.clone().add(p.tangent));
+    const uniforms = {
+      uTime: { value: 0 },
+      uSunDir: { value: new THREE.Vector3(0.42, 0.55, 0.32).normalize() },
+      uDeep: { value: new THREE.Color(0x143a42) },
+      uShallow: { value: new THREE.Color(0x2a6a6e) },
+    };
+    this.waterUniforms = uniforms;
+    const water = new THREE.Mesh(
+      new THREE.PlaneGeometry(18, 7, 10, 5),
+      new THREE.ShaderMaterial({
+        uniforms,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        vertexShader: `varying vec3 vPos;
+          void main(){
+            vPos = position;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }`,
+        fragmentShader: `uniform float uTime;
+          uniform vec3 uSunDir, uDeep, uShallow;
+          varying vec3 vPos;
+          float wave(vec2 q, float speed, float scale){
+            return sin(q.x * scale + uTime * speed) * sin(q.y * scale * 0.8 + uTime * speed * 0.7);
+          }
+          void main(){
+            vec2 q = vPos.xy;
+            float h = wave(q, 1.6, 0.55) * 0.5 + wave(q, 2.7, 1.3) * 0.3;
+            // Fake normals from finite differences of the height field.
+            vec2 e = vec2(0.12, 0.0);
+            float hx = wave(q + e.xy, 1.6, 0.55) * 0.5 + wave(q + e.xy, 2.7, 1.3) * 0.3;
+            float hz = wave(q + e.yx, 1.6, 0.55) * 0.5 + wave(q + e.yx, 2.7, 1.3) * 0.3;
+            vec3 n = normalize(vec3(h - hx, 0.5, h - hz));
+            vec3 col = mix(uDeep, uShallow, smoothstep(-0.4, 0.4, h));
+            float fres = pow(1.0 - abs(n.y), 2.2);
+            vec3 r = reflect(vec3(0.0, -1.0, 0.0), n);
+            float spec = pow(max(dot(r, uSunDir), 0.0), 42.0);
+            col += vec3(0.9, 0.95, 1.0) * fres * 0.35;
+            col += vec3(1.0, 0.95, 0.8) * spec * 0.7;
+            gl_FragColor = vec4(col, 0.82);
+          }`,
+      }),
+    );
     water.rotation.x = -Math.PI / 2;
     water.position.copy(p.position);
-    water.position.y -= 0.4;
+    water.position.y = track.height(p.position.x, p.position.z).y - 0.08;
+    water.name = 'river';
+    void mats;
     this.group.add(water);
   }
 

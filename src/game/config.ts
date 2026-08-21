@@ -21,7 +21,7 @@ export const BIKE = {
   brakeRear: 640,
   maxSteer: 0.62,
   minSteer: 0.14,
-  cdArea: 0.42,
+  cdArea: 0.52,
 };
 
 export const SURFACES: Record<

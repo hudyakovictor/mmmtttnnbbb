@@ -21,6 +21,7 @@ interface ThreeGameDiagnostics {
     colliders: number;
     ccd: boolean;
     sensors: number;
+    ragdoll: boolean;
   };
   player: {
     position: { x: number; y: number; z: number };

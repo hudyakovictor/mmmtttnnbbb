@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   makeBannerTexture,
+  makeCloudTexture,
   makeDirtTexture,
   makeNeedleTexture,
   makeNumberPlate,
@@ -15,6 +16,7 @@ export class MaterialLibrary {
   readonly needleMap = makeNeedleTexture();
   readonly bannerMap = makeBannerTexture();
   readonly plateMap = makeNumberPlate();
+  readonly cloudMap = makeCloudTexture();
 
   readonly bodyPrimary = new THREE.MeshPhysicalMaterial({
     color: 0xc45c2a,
@@ -163,5 +165,6 @@ export class MaterialLibrary {
     this.needleMap.dispose();
     this.bannerMap.dispose();
     this.plateMap.dispose();
+    this.cloudMap.dispose();
   }
 }

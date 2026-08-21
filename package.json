@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 4188",
     "test": "playwright test",
     "verify:visual": "playwright test tests/visual.spec.ts",
+    "sim:smoke": "esbuild scripts/sim-smoke.ts --bundle --platform=node --format=esm --outfile=dist/sim-smoke.mjs && node dist/sim-smoke.mjs",
     "inspect:canvas": "node scripts/inspect-threejs-canvas.mjs"
   },
   "dependencies": {

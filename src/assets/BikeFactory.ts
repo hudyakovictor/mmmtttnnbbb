@@ -12,8 +12,12 @@ export type BikeRig = {
   torso: THREE.Group;
   armL: THREE.Group;
   armR: THREE.Group;
+  foreL: THREE.Group;
+  foreR: THREE.Group;
   legL: THREE.Group;
   legR: THREE.Group;
+  shinL: THREE.Group;
+  shinR: THREE.Group;
   collision: THREE.Object3D;
 };
 
@@ -167,32 +171,61 @@ export function createBike(mats: MaterialLibrary): BikeRig {
 
   const armL = new THREE.Group();
   armL.position.set(-0.18, 0.12, 0.04);
-  const upperL = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.28, 8), mats.skin);
-  upperL.rotation.x = 0.9;
-  upperL.position.set(0, -0.04, 0.1);
+  const upperL = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.26, 8), mats.skin);
+  upperL.position.set(0, -0.13, 0);
   armL.add(upperL);
+  const foreL = new THREE.Group();
+  foreL.position.set(0, -0.26, 0);
+  const foreLimb = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.026, 0.24, 8), mats.skin);
+  foreLimb.position.set(0, -0.12, 0);
   const gloveL = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), mats.rubber);
-  gloveL.position.set(0, -0.08, 0.28);
-  armL.add(gloveL);
+  gloveL.position.set(0, -0.25, 0);
+  foreL.add(foreLimb, gloveL);
+  armL.add(foreL);
   torso.add(armL);
 
-  const armR = armL.clone();
-  armR.position.x = 0.18;
+  const armR = new THREE.Group();
+  armR.position.set(0.18, 0.12, 0.04);
+  const upperR = upperL.clone();
+  armR.add(upperR);
+  const foreR = new THREE.Group();
+  foreR.position.set(0, -0.26, 0);
+  const foreLimbR = foreLimb.clone();
+  foreLimbR.position.set(0, -0.12, 0);
+  const gloveR = gloveL.clone();
+  gloveR.position.set(0, -0.25, 0);
+  foreR.add(foreLimbR, gloveR);
+  armR.add(foreR);
   torso.add(armR);
 
   const legL = new THREE.Group();
   legL.position.set(-0.08, -0.04, 0);
-  const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.32, 8), mats.cloth);
-  thigh.rotation.x = 0.55;
-  thigh.position.set(0, -0.12, 0.08);
-  legL.add(thigh);
-  const boot = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.07, 0.16), mats.rubber);
-  boot.position.set(0, -0.32, 0.16);
-  legL.add(boot);
+  const thighL = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.04, 0.3, 8), mats.cloth);
+  thighL.position.set(0, -0.15, 0);
+  legL.add(thighL);
+  const shinL = new THREE.Group();
+  shinL.position.set(0, -0.3, 0);
+  const shinMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.035, 0.32, 8), mats.cloth);
+  shinMesh.position.set(0, -0.16, 0);
+  const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.07, 0.16), mats.rubber);
+  bootL.position.set(0, -0.34, 0);
+  shinL.add(shinMesh, bootL);
+  legL.add(shinL);
   rider.add(legL);
 
-  const legR = legL.clone();
-  legR.position.x = 0.08;
+  const legR = new THREE.Group();
+  legR.position.set(0.08, -0.04, 0);
+  const thighR = thighL.clone();
+  thighR.position.set(0, -0.15, 0);
+  legR.add(thighR);
+  const shinR = new THREE.Group();
+  shinR.position.set(0, -0.3, 0);
+  const shinMeshR = shinMesh.clone();
+  shinMeshR.position.set(0, -0.16, 0);
+  const bootR = bootL.clone();
+  bootR.position.set(0, -0.34, 0);
+  shinR.add(shinMeshR, bootR);
+  legR.add(shinR);
   rider.add(legR);
 
   root.add(rider);
@@ -222,8 +255,144 @@ export function createBike(mats: MaterialLibrary): BikeRig {
     torso,
     armL,
     armR,
+    foreL,
+    foreR,
     legL,
     legR,
+    shinL,
+    shinR,
     collision,
   };
+}
+
+const _ikN = new THREE.Vector3();
+const _ikMid = new THREE.Vector3();
+const _ikPerp = new THREE.Vector3();
+const _ikElbow = new THREE.Vector3();
+const _ikUp = new THREE.Vector3();
+const _ikLo = new THREE.Vector3();
+const _ikDown = new THREE.Vector3(0, -1, 0);
+
+/** Analytic two-bone IK. All inputs/outputs in the same (root) space. */
+function solveTwoBone(
+  origin: THREE.Vector3,
+  target: THREE.Vector3,
+  l1: number,
+  l2: number,
+  pole: THREE.Vector3,
+  outUpper: THREE.Quaternion,
+  outLower: THREE.Quaternion,
+): void {
+  _ikN.subVectors(target, origin);
+  let d = _ikN.length();
+  if (d < 1e-5) {
+    outUpper.identity();
+    outLower.identity();
+    return;
+  }
+  _ikN.divideScalar(d);
+  d = THREE.MathUtils.clamp(d, 0.02, l1 + l2 - 0.04);
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+  const hSq = l1 * l1 - a * a;
+  const h = hSq > 0 ? Math.sqrt(hSq) : 0;
+  _ikMid.copy(origin).addScaledVector(_ikN, a);
+  _ikPerp.subVectors(pole, origin);
+  _ikPerp.addScaledVector(_ikN, -_ikPerp.dot(_ikN));
+  if (_ikPerp.lengthSq() < 1e-6) _ikPerp.set(_ikN.z, 0, -_ikN.x);
+  _ikPerp.normalize();
+  _ikElbow.copy(_ikMid).addScaledVector(_ikPerp, h);
+  _ikUp.subVectors(_ikElbow, origin).divideScalar(l1);
+  _ikLo.subVectors(target, _ikElbow).normalize();
+  outUpper.setFromUnitVectors(_ikDown, _ikUp);
+  outLower.setFromUnitVectors(_ikDown, _ikLo);
+}
+
+const _pole = new THREE.Vector3();
+const _torsoQuat = new THREE.Quaternion();
+const _torsoQuatInv = new THREE.Quaternion();
+const _upperQuat = new THREE.Quaternion();
+const _lowerQuat = new THREE.Quaternion();
+const _upperLocal = new THREE.Quaternion();
+const _upperLocalInv = new THREE.Quaternion();
+const _lowerTorso = new THREE.Quaternion();
+const _upperInv = new THREE.Quaternion();
+const _target = new THREE.Vector3();
+const _localOffset = new THREE.Vector3();
+
+/**
+ * Runtime sockets per the brief: hands glued to the grips and feet to the
+ * pedals every frame via two-bone IK (no baked ride loop). Everything is
+ * solved in bike-root space so the rig needs no matrixWorld refreshes.
+ */
+export function applyRiderPose(bike: BikeRig, crouch: number): void {
+  const { fork, crank, rider, torso, armL, armR, foreL, foreR, legL, legR, shinL, shinR } = bike;
+
+  // Torso pitch (attack stance) in root space.
+  _torsoQuat.setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.35 + crouch);
+  _torsoQuatInv.copy(_torsoQuat).invert();
+
+  // Hands: grip ends on the bar, in root space (fork group translates with travel).
+  const barY = fork.position.y + 0.06;
+  const handX = 0.31;
+  const handZ = fork.position.z - 0.02;
+
+  // Feet: pedal orbits in root space.
+  const theta = crank.rotation.x;
+  const cosT = Math.cos(theta);
+  const sinT = Math.sin(theta);
+  const pedalLY = -0.13 * cosT;
+  const pedalLZ = -0.13 * sinT;
+  const pedalRY = 0.13 * cosT;
+  const pedalRZ = 0.13 * sinT;
+
+  // Shoulders / hips (root space), following torso pitch and rider crouch.
+  const shoulderBase = new THREE.Vector3();
+  const shoulderL = new THREE.Vector3();
+  const shoulderR = new THREE.Vector3();
+  const hipBase = rider.position.clone();
+  const hipL = new THREE.Vector3();
+  const hipR = new THREE.Vector3();
+
+  shoulderBase.copy(rider.position).add(torso.position);
+  _localOffset.set(-0.18, 0.12, 0.04).applyQuaternion(_torsoQuat);
+  shoulderL.copy(shoulderBase).add(_localOffset);
+  _localOffset.set(0.18, 0.12, 0.04).applyQuaternion(_torsoQuat);
+  shoulderR.copy(shoulderBase).add(_localOffset);
+
+  // Arms: two-bone IK shoulder → grip, elbows flared out and slightly low.
+  // Upper solved in torso-local space; forearm relative to the upper arm.
+  _target.set(fork.position.x - handX, barY, handZ);
+  _pole.copy(shoulderL).add(new THREE.Vector3(-0.3, -0.18, 0.06));
+  solveTwoBone(shoulderL, _target, 0.3, 0.28, _pole, _upperQuat, _lowerQuat);
+  _upperLocal.copy(_torsoQuatInv).multiply(_upperQuat);
+  armL.quaternion.copy(_upperLocal);
+  _upperLocalInv.copy(_upperLocal).invert();
+  _lowerTorso.copy(_torsoQuatInv).multiply(_lowerQuat);
+  foreL.quaternion.copy(_upperLocalInv.multiply(_lowerTorso));
+
+  _target.set(fork.position.x + handX, barY, handZ);
+  _pole.copy(shoulderR).add(new THREE.Vector3(0.3, -0.18, 0.06));
+  solveTwoBone(shoulderR, _target, 0.3, 0.28, _pole, _upperQuat, _lowerQuat);
+  _upperLocal.copy(_torsoQuatInv).multiply(_upperQuat);
+  armR.quaternion.copy(_upperLocal);
+  _upperLocalInv.copy(_upperLocal).invert();
+  _lowerTorso.copy(_torsoQuatInv).multiply(_lowerQuat);
+  foreR.quaternion.copy(_upperLocalInv.multiply(_lowerTorso));
+
+  // Legs: hip → pedal, knees forward.
+  hipL.copy(hipBase).add(new THREE.Vector3(-0.08, -0.04, 0));
+  hipR.copy(hipBase).add(new THREE.Vector3(0.08, -0.04, 0));
+  _target.set(crank.position.x - 0.05, crank.position.y + pedalLY, crank.position.z + pedalLZ);
+  _pole.copy(hipL).add(new THREE.Vector3(0, -0.15, 0.3));
+  solveTwoBone(hipL, _target, 0.3, 0.36, _pole, _upperQuat, _lowerQuat);
+  legL.quaternion.copy(_upperQuat);
+  _upperInv.copy(_upperQuat).invert();
+  shinL.quaternion.copy(_upperInv.multiply(_lowerQuat));
+
+  _target.set(crank.position.x + 0.05, crank.position.y + pedalRY, crank.position.z + pedalRZ);
+  _pole.copy(hipR).add(new THREE.Vector3(0, -0.15, 0.3));
+  solveTwoBone(hipR, _target, 0.3, 0.36, _pole, _upperQuat, _lowerQuat);
+  legR.quaternion.copy(_upperQuat);
+  _upperInv.copy(_upperQuat).invert();
+  shinR.quaternion.copy(_upperInv.multiply(_lowerQuat));
 }

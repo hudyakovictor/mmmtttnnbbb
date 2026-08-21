@@ -27,6 +27,9 @@ export class Track {
   readonly checkpoints: number[] = [0, 0.22, 0.48, 0.74, 0.97];
   private lastIndex = 0;
   private readonly tmp = new THREE.Vector3();
+  private readonly riverPos: THREE.Vector3;
+  private readonly riverBinormal: THREE.Vector3;
+  private readonly riverTangent: THREE.Vector3;
 
   constructor(mats: MaterialLibrary) {
     const controls: THREE.Vector3[] = [];
@@ -146,6 +149,10 @@ export class Track {
 
     this.start = this.points[4].position.clone();
     this.finish = this.points[this.points.length - 6].position.clone();
+    const river = this.points[Math.floor(this.points.length * 0.5)];
+    this.riverPos = river.position.clone();
+    this.riverBinormal = river.binormal.clone();
+    this.riverTangent = river.tangent.clone();
     this.mesh = this.buildMesh(mats);
   }
 
@@ -195,42 +202,90 @@ export class Track {
   height(x: number, z: number): { y: number; normal: THREE.Vector3; surface: SurfaceId; trail: number } {
     const loc = this.locate(x, z);
     const p = loc.point;
+    const y = this.heightRaw(x, z);
+    // Normal from finite differences along the TRAIL axes (tangent captures
+    // the fall-line descent, binormal the bank). Each probe samples the
+    // spline at ITS OWN location so the descent between sample points is
+    // visible — the wheels must feel the same slope the mesh shows.
+    const e = 0.55;
+    const tx = p.tangent.x;
+    const tz = p.tangent.z;
+    const bx = p.binormal.x;
+    const bz = p.binormal.z;
+    const dhdT = (this.heightRaw(x + tx * e, z + tz * e) - this.heightRaw(x - tx * e, z - tz * e)) / (2 * e);
+    const dhdB = (this.heightRaw(x + bx * e, z + bz * e) - this.heightRaw(x - bx * e, z - bz * e)) / (2 * e);
+    const normal = this.tmp.set(-tx * dhdT - bx * dhdB, 1, -tz * dhdT - bz * dhdB).normalize().clone();
+
     const absLat = Math.abs(loc.lateral);
     const half = p.width * 0.5;
     const trail = THREE.MathUtils.smoothstep(half + 1.1, half - 0.2, absLat);
-    const bankY = -loc.lateral * Math.tan(p.bank) * trail;
-    let bed = p.position.y;
-    if (p.feature === 'whoops') bed += Math.sin(p.s * 220) * 0.18 * trail;
-    if (p.feature === 'roots') bed += Math.sin(p.s * 340) * 0.045 * trail;
+    const rdx = x - this.riverPos.x;
+    const rdz = z - this.riverPos.z;
+    const rLat = rdx * this.riverBinormal.x + rdz * this.riverBinormal.z;
+    const rAlong = rdx * this.riverTangent.x + rdz * this.riverTangent.z;
+    const riverBand = Math.exp(-(rLat * rLat) / 25) * Math.exp(-(rAlong * rAlong) / 256);
+
+    let surface: SurfaceId = p.surface;
+    if (riverBand > 0.45) surface = 'mud';
+    else if (trail < 0.25) surface = absLat > 9 ? 'pine' : 'dirt';
+    if (p.feature === 'drop' && trail > 0.5 && absLat < half * 0.7) surface = 'rock';
+    return { y, normal, surface, trail };
+  }
+
+  /**
+   * Full height channel: bed + bank + micro-relief + mountains + river cut.
+   * The bed interpolates between the bracketing spline samples so the channel
+   * is continuous along the trail (no staircase), and normals see the true
+   * fall-line descent.
+   */
+  private heightRaw(x: number, z: number): number {
+    const loc = this.locate(x, z);
+    const i = loc.index;
+    const p = loc.point;
+    const n = this.points.length;
+
+    // Fractional position along the segment that actually contains (x, z).
+    const seg = i + 1 < n ? this.points[i + 1] : null;
+    const prev = i - 1 >= 0 ? this.points[i - 1] : null;
+    const projF = (x - p.position.x) * p.tangent.x + (z - p.position.z) * p.tangent.z;
+    let i0 = i;
+    let i1 = i + 1;
+    let frac = 0.5;
+    if (projF >= 0 && seg) {
+      const segLen = p.position.distanceTo(seg.position);
+      frac = THREE.MathUtils.clamp(projF / segLen, 0, 1);
+    } else if (prev) {
+      i0 = i - 1;
+      i1 = i;
+      const segLen = p.position.distanceTo(prev.position);
+      frac = THREE.MathUtils.clamp(1 + projF / segLen, 0, 1);
+    }
+    const p0 = this.points[i0];
+    const p1 = this.points[i1];
+    const mix = (a: number, b: number): number => a + (b - a) * frac;
+
+    const lat = loc.lateral;
+    const absLat = Math.abs(lat);
+    const half = mix(p0.width, p1.width) * 0.5;
+    const trail = THREE.MathUtils.smoothstep(half + 1.1, half - 0.2, absLat);
+    const bankY = -lat * Math.tan(mix(p0.bank, p1.bank)) * trail;
+    let bed = mix(p0.position.y, p1.position.y);
+    const sLerp = mix(p0.s, p1.s);
+    const feat = frac < 0.5 ? p0.feature : p1.feature;
+    if (feat === 'whoops') bed += Math.sin(sLerp * 220) * 0.18 * trail;
+    if (feat === 'roots') bed += Math.sin(sLerp * 340) * 0.045 * trail;
+    const rdx = x - this.riverPos.x;
+    const rdz = z - this.riverPos.z;
+    const rLat = rdx * this.riverBinormal.x + rdz * this.riverBinormal.z;
+    const rAlong = rdx * this.riverTangent.x + rdz * this.riverTangent.z;
+    const riverCut =
+      Math.exp(-(rLat * rLat) / 25) * Math.exp(-(rAlong * rAlong) / 256) * 0.62;
     const warpX = x * 0.035 + fbm(x * 0.02, z * 0.02) * 8;
     const mountain =
       bed +
       Math.max(0, absLat - half) * 0.22 +
       (fbm(warpX, z * 0.03) - 0.45) * 6.5 * (1 - trail);
-    const y = mountain * (1 - trail) + (bed + bankY) * trail;
-    const e = 0.55;
-    const yl = this.heightFast(x - e, z, p, loc.lateral);
-    const yr = this.heightFast(x + e, z, p, loc.lateral);
-    const yb = this.heightFast(x, z - e, p, loc.lateral);
-    const yf = this.heightFast(x, z + e, p, loc.lateral);
-    const normal = this.tmp.set(yl - yr, 2 * e, yb - yf).normalize().clone();
-    let surface: SurfaceId = p.surface;
-    if (trail < 0.25) surface = absLat > 9 ? 'pine' : 'dirt';
-    if (p.feature === 'drop' && trail > 0.5 && absLat < half * 0.7) surface = 'rock';
-    return { y, normal, surface, trail };
-  }
-
-  private heightFast(x: number, z: number, p: TrackPoint, lateral: number): number {
-    const dx = x - p.position.x;
-    const dz = z - p.position.z;
-    const lat = dx * p.binormal.x + dz * p.binormal.z || lateral;
-    const absLat = Math.abs(lat);
-    const half = p.width * 0.5;
-    const trail = THREE.MathUtils.smoothstep(half + 1.1, half - 0.2, absLat);
-    const bankY = -lat * Math.tan(p.bank) * trail;
-    const bed = p.position.y;
-    const mountain = bed + Math.max(0, absLat - half) * 0.22;
-    return mountain * (1 - trail) + (bed + bankY) * trail;
+    return mountain * (1 - trail) + (bed + bankY) * trail - riverCut;
   }
 
   private buildMesh(mats: MaterialLibrary): THREE.Mesh {
@@ -266,7 +321,7 @@ export class Track {
           h.surface === 'rock' || Math.abs(h.normal.y) < 0.72 ? 1 : 0;
         colors[idx] = packed;
         colors[idx + 1] = rock;
-        colors[idx + 2] = 0.55 + packed * 0.25;
+        colors[idx + 2] = (h.surface === 'mud' ? 0.45 : 0.55) + packed * 0.25;
       }
     }
 
@@ -299,12 +354,22 @@ export class Track {
     material.onBeforeCompile = (shader) => {
       shader.uniforms.uTrail = { value: mats.trailMap };
       shader.uniforms.uRock = { value: mats.rockMap };
+      shader.uniforms.uCloud = { value: mats.cloudMap };
+      shader.uniforms.uCloudOffset = { value: new THREE.Vector2(0, 0) };
+      shader.vertexShader = `varying vec3 vWorldPos;\n${shader.vertexShader}`.replace(
+        '#include <worldpos_vertex>',
+        `#include <worldpos_vertex>
+         vWorldPos = worldPosition.xyz;`,
+      );
       shader.fragmentShader = shader.fragmentShader
         .replace(
           '#include <map_pars_fragment>',
           `#include <map_pars_fragment>
            uniform sampler2D uTrail;
-           uniform sampler2D uRock;`,
+           uniform sampler2D uRock;
+           uniform sampler2D uCloud;
+           uniform vec2 uCloudOffset;
+           varying vec3 vWorldPos;`,
         )
         .replace(
           '#include <map_fragment>',
@@ -313,7 +378,10 @@ export class Track {
            vec3 rockC = texture2D(uRock, vMapUv * 0.45).rgb;
            diffuseColor.rgb = mix(diffuseColor.rgb, trailC, vColor.r);
            diffuseColor.rgb = mix(diffuseColor.rgb, rockC, vColor.g * 0.72);
-           diffuseColor.rgb *= mix(0.72, 1.05, vColor.b);`,
+           diffuseColor.rgb *= mix(0.72, 1.05, vColor.b);
+           float cloud = texture2D(uCloud, vWorldPos.xz * 0.004 + uCloudOffset).r;
+           float cloudShadow = smoothstep(0.5, 0.72, cloud);
+           diffuseColor.rgb *= mix(1.0, 0.8, cloudShadow);`,
         );
       material.userData.shader = shader;
     };
@@ -324,5 +392,15 @@ export class Track {
     mesh.castShadow = false;
     mesh.name = 'terrain';
     return mesh;
+  }
+
+  /** Cloud shadows drift with the wind; called once per frame. */
+  tickClouds(time: number, wind: THREE.Vector2): void {
+    const mat = this.mesh.material as THREE.MeshStandardMaterial;
+    const shader = mat.userData.shader as
+      | { uniforms: { uCloudOffset: { value: THREE.Vector2 } } }
+      | undefined;
+    if (!shader) return;
+    shader.uniforms.uCloudOffset.value.set(wind.x * time * 0.012, wind.y * time * 0.012);
   }
 }

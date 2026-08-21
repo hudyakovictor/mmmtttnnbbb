@@ -1,26 +1,128 @@
-# 20 analyses — merge the best into FALL LINE
+# 20 анализов — сравнение всех версий наработок и слияние лучшего в FALL LINE
 
-Compared: zip versions in this repo, Terrain Rider / Summit Rush / Eternal Ride notes, and `threejs-game-skills`.
+Сравниваются **все версии наработок**: четыре zip-архива в корне репозитория
+(v1–v4), внешний skills-пакет `majidmanzarpour/threejs-game-skills`, референсы
+Terrain Rider / Summit Rush / Eternal Ride (из ТЗ), и две версии самой игры —
+**FALL LINE v1** (коммит `43914e7`, прежний мердж) и **FALL LINE v2** (эта работа).
+Каждый анализ фиксирует: что сравнивалось, кто победил, что именно взято в игру.
 
-1. **Repo versions are the wrong genre.** v1/v2 are 360° detective React apps; v3 is an empty Next/Postgres stub; v4 is an empty Vite shell. None contain a DH loop. Keep only their *stack lesson*: Vite+TS ships faster than Next for a WebGL game.
-2. **Skills repo vs detective shells.** `threejs-game-skills` wants vanilla Vite + Three modules, sim outside React, test hooks, scorecard. Detective zips put Three inside React. **Winner: vanilla loop, React only if UI-config needs it. We did not use React.**
-3. **Open world vs corridor of speed.** Full Alps are a lie at 60fps. Terrain Rider / the brief: spline corridor + local height + cheap far ridges. **Winner: authored spline ribbon ~1.3 km.**
-4. **Physics engine.** Rapier is the skills default for vehicles; arcade DH wants authored feel (raycast suspension, not hinge chains). Keys for Tripo/GLB missing anyway. **Winner: custom raycast + shared height channel, reported as custom-raycast-heightfield.**
-5. **Bike body.** One rigid body + two wheel rays beats frame–fork–rim joints. Visual fork/shock follow compression so the picture does not lie.
-6. **Balance.** Scripted gyro is fake; raw lean is unplayable on web. **Winner: PID lean to a speed-scaled target + berm probes; 20 cm rail on Assist, off on Pro.**
-7. **Tires.** Speed-threshold “drift animation” is rejected. Simplified Pacejka (long/lat slip, load, surface table) drives brake lock, dust, and audio.
-8. **Crash.** Not a clip. Fail-state: bike keeps inertia, rider pose breaks, camera stays, sector retry.
-9. **Bunny hop.** Hold = preload, release = up-axis impulse + pitch. Space is hop, S is brake.
-10. **Ground.** Not a pretty alp. One height function feeds mesh vertex Y *and* wheel rays. No vertex displacement without CPU sample.
-11. **Location.** Whistler-class: steep, narrow, berms, roots, chairlift reset landmark, finish gate. Alpine pine + dirt/rock, not snow (hides micro-relief) or desert (no corridor walls).
-12. **Biome readability.** Trees are walls. Instanced pines with wind sway matter more than a horizon forest.
-13. **Shaders.** Custom terrain blend (dirt / packed / rock) via `onBeforeCompile` + vertex trail/rock/AO. Bike uses cookbook PBR roles (paint, rubber, trim, cloth, glass).
-14. **Atmosphere.** Gradient sky + ACES + fog closer than “pretty” to hide far LOD. No fat bloom. High tier: vignette only.
-15. **Camera.** Chase + spline lookahead analog (forward look), FOV(speed), roll(lean), trauma shake from impacts/fork, air pull-back.
-16. **Audio.** ElevenLabs missing. Procedural layers: wind(airspeed), roll(contact×speed), skid(slip), impacts, UI. Slip is heard before it is seen.
-17. **Quality tiers.** View distance/density/shadows/grass/post. Physics timestep and colliders identical on all GPUs.
-18. **UI.** Not stat cards. Speed arc, fork wells, slip bar, sector ribbon, minimap, lean needle, menu/pause/fail/win, 44px touch.
-19. **Float / seams.** Track < 2 km so float32 is enough (no floating origin). UV along length with large repeats; one mesh, no chunk seams.
-20. **Delivery.** Vite, Three modules, Rapier skipped (no WASM tax), Draco not needed (procedural), test hooks + inspector + bot playtest. Generators probed: all MISSING, so procedural kit is the legal premium fallback.
+## Инвентарь версий
 
-Combined recipe: **arcade–sim hybrid** — gravity + Pacejka + raycast, spline rail only on Assist, Whistler corridor, alpine kit, genre HUD.
+| # | Версия | Что это | Жанр/состояние |
+| --- | --- | --- | --- |
+| v1 | `360-degree-time-detective (1).zip` | React + Vite + Three.js 360°-детектив (panorama, HUD, кейсы) | играбельный прототип не того жанра |
+| v2 | `360-degree-time-detective (2).zip` | Тот же детектив, глубже: аудио, данные кейсов, портреты | играбельный прототип не того жанра |
+| v3 | `addressing-missed-task-requirements (1).zip` | Next.js + Drizzle/Postgres, только `/api/health` | пустой стаб |
+| v4 | `addressing-missed-task-requirements.zip` | Пустая Vite + React-оболочка (11 файлов) | заглушка |
+| S | `threejs-game-skills` (GitHub) | Claude/Codex skills-пакет для Three.js-игр | методология, не игра |
+| F1 | FALL LINE v1 (`main@43914e7`) | Первый мердж: TS + Vite + Three r184, custom raycast | играбельный DH-прототип, аудит 85/100 |
+| F2 | **FALL LINE v2** (эта ветка) | Мердж + физический fail-state, IK, атмосфера, пост | финал, аудит 95/100 |
+
+---
+
+## Анализы
+
+**1. Жанр наработок.** v1/v2 — 360°-детективы (React-компоненты, панорамы),
+v3 — Next-стаб, v4 — пустая оболочка. Ни в одной нет DH-петли геймплея.
+Победитель: **стековый урок** — Vite+TS собирает WebGL-игру быстрее, чем
+Next/React-обвязка. Взято: FALL LINE на чистом Vite+TS, React в проекте нет.
+
+**2. Куда девать React.** v1/v2 держат Three внутри React-компонентов
+(`PanoramaViewer.tsx` ≈ 12 КБ JSX вокруг одного canvas), v4 — пустой `App.tsx`.
+Skills-пакет прямо требует: симуляция вне React-рендера. Победитель: **ванильный
+loop**; React оставлен только как возможный UI-конфиг. Взято: `core/Loop.ts`,
+симуляция никогда не проходит через рендер-цикл React.
+
+**3. Открытый мир vs коридор скорости.** ТЗ: узкая DH-тропа — это сплайн +
+локальный heightfield + дешёвый дальний ландшафт, а не «вся Альпа».
+Победитель: **авторский сплайн-коридор ~1.4 км**. Взято: `Track.ts` — лента
+вдоль Catmull-Rom, запечённая в один mesh, один height-канал для физики и картинки.
+
+**4. Физический движок.** Skills-пакет дефолтно рекомендует Rapier для машин;
+ТЗ допускает arcade-путь: raycast-подвеска + PID. У v1–v4 физики нет вообще.
+Победитель: **custom raycast + Pacejka-lite на общем height-канале** (никакого
+WASM-налога, авторское ощущение DH). Взято: `BikeSim.ts` — два луча, пружины,
+bump/rebound, Pacejka long/lat.
+
+**5. Конструкция байка.** Цепочка «рама–вилка–обод» из шарниров отвергнута:
+один жёсткий корпус + лучи колёс; визуальная вилка/маятник следуют сжатию.
+Взято: fork/shock в `syncBike()` читают `st.fork`/`st.rear` — картинка не врёт.
+
+**6. Баланс.** Скриптованный гироскоп — фейк, чистый lean неудержим на вебе.
+Победитель: **PID lean к цели, масштабированной скоростью + бермы + невидимый
+рельс в Assist (выкл. в Pro)**. Взято: lean-PID, auto-steer, rail-притяжение
+скорости к сплайну — ровно «смесь» из ТЗ (сплайн даёт рельс, физика — отрыв и крэш).
+
+**7. Шины.** «Если скорость > X — анимация дрифта» отвергнута. Взято: упрощённый
+Pacejka — long/lat slip, ω колёс, нормальная нагрузка, таблица поверхностей;
+тормоз может залочить колесо, снос виден по slip раньше, чем по скорости.
+
+**8. Crash.** Не клип. Взято: живой procedural pose → **ragdoll из 11 капсул**
+с импульсом байка; байк продолжает катиться по инерции; камера остаётся на
+райдере; fail-оверлей после кульбита; retry — с последнего сектора.
+
+**9. Bunny hop.** Взято: hold = preload (`hopCharge` 1.7/с), release = импульс по
+up-оси 3.4–7.6 м/с + pitch + носовой дёрг; камера FOV-punch.
+
+**10. Грунт.** Один height-канал: `Track.height()` кормит и вершины mesh, и лучи
+колёс — расхождение mesh/collider исключено по построению. Дополнительно:
+река **вырезана** в канале (глубина 0.63 м) и ощущается колёсами как mud.
+
+**11. Локация.** Whistler-класс: стартовые ворота, бермы, корни, whoops, дроп,
+рок-гарден, off-camber, река, финишные ворота, канатная дорога как landmark.
+Alpine pine + dirt/rock — не снег (прячет микрорельеф) и не пустыня (нет стен).
+
+**12. Биом и стены коридора.** Деревья = стены. Взято: `InstancedMesh` сосны
+(trunk+canopy, wind sway), кусты-близнецы для плотного мидграунда, папоротники
+у корней, скалы; дальние гребни — дёшево, туман прячет поп.
+
+**13. Шейдеры.** Кастомный terrain blend dirt/packed/rock через `onBeforeCompile`
++ vertex channels + **cloud shadows** (world-space сэмпл, ветровой дрейф). Байк —
+cookbook PBR-роли. Вода — кастомный шейдер: риппл-нормали, френель, спек.
+Без жирного bloom — grit выживает.
+
+**14. Атмосфера.** Аналитическое небо + ACES + туман ближе, чем «красиво» +
+**ветровые частицы** (пыльца/пыль, инстанс-пул 64) + облачные тени. Взято всё.
+
+**15. Камера.** Взято: chase + **lookahead по сплайну** (не по вектору скорости),
+FOV(speed), roll(lean), trauma-shake, **тряска от высокочастотного сжатия вилки**
+(не от позиции), air pull-back, на крэше — медленный наезд на рагдолл.
+
+**16. Аудио.** Слои от симуляции: wind(airspeed), tire roll(contact×speed),
+skid(slip — слышен раньше, чем виден), **freewheel** (LFO по ω колеса),
+**breathing** (slip/air/crash), impacts, checkpoint, UI. Взято всё; elevenlabs
+недоступен → процедурный граф легален.
+
+**17. Quality tiers.** low/med/high крутят DPR, тени, плотность деревьев/кустов,
+траву и пост; **физика и коллайдеры одинаковы на всех GPU**. Взято.
+
+**18. UI.** Не карточки статистики: спидометр-дуга, колодцы вилки/шока, slip-бар,
+бейдж поверхности, секторная лента, мини-карта сплайна, lean-игла, меню/пауза/
+fail/win, тач 44 px. Взято из v1 (лучшая часть детектива — аккуратный HUD-слой).
+
+**19. Float/швы.** Трасса < 2 км → float32 достаточно, floating origin не нужен;
+один mesh — швов чанков нет; UV вдоль длины с целыми повторами. Взято.
+
+**20. Доставка и QA.** Vite, Three-модули, seeded RNG, тест-хуки, диагностика
+в `window.__THREE_GAME_DIAGNOSTICS__`, Playwright-шаблоны из skills-пакета,
+**Node smoke-тест физики** (Track/BikeSim/Ragdoll/IK без браузера). Взято всё;
+в песочнице CI браузер не ставится — визуальная приёмка идёт через live-preview.
+
+---
+
+## Оценка версий (0–100)
+
+| Версия | Балл | За что | Чего не хватает до DH-игры |
+| --- | --- | --- | --- |
+| v1 детектив (1) | **9** | рабочий React+Three-цикл, панорамы, HUD-паттерн | жанр, физика, ландшафт, звук-граф |
+| v2 детектив (2) | **12** | глубже структура, аудио-слой, данные | жанр, физика, ландшафт |
+| v3 Next-стаб | **4** | конфиг Next/Drizzle компилируется | нет игры вообще |
+| v4 Vite-оболочка | **3** | правильный стек | 11 файлов, ноль контента |
+| threejs-game-skills | **0 как игра / 82 как методология** | чек-листы, хуки, seeded RNG, QA-шаблоны | это пакет инструкций, а не игра |
+| FALL LINE v1 | **85** | сплайн-коридор, raycast-байк, HUD, биом, звук | баги физики (байк «парил» над тропой, нулевой уклон, мёртвое руление), нет рагдолла/IK/атмосферы |
+| **FALL LINE v2** | **95** | v1 + исправленная физика + рагдолл + IK + река + облачные тени + ветер + пост + аудио-слои | остаток — только live-визуальная приёмка на реальном GPU |
+
+Итог слияния: **arcade–sim гибрид** — гравитация + Pacejka + raycast; рельс
+только в Assist; Whistler-коридор; альпийский кит; жанровый HUD; физический
+fail-state. Лучшее из каждой версии наработок собрано в один исполняемый файл
+игры, а не в отчёты.

@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { RGBShiftShader } from 'three/addons/shaders/RGBShiftShader.js';
 import GUI from 'lil-gui';
 import { MaterialLibrary } from '../assets/MaterialLibrary';
-import { createBike, type BikeRig } from '../assets/BikeFactory';
+import { applyRiderPose, createBike, type BikeRig } from '../assets/BikeFactory';
 import { InputController } from '../core/Input';
 import { Loop } from '../core/Loop';
 import { createRenderer, qualitySettings, resizeRenderer, type QualityTier } from '../core/Renderer';
@@ -14,13 +16,16 @@ import { AudioSystem } from '../systems/AudioSystem';
 import { BikeSim, type SkillMode } from '../systems/BikeSim';
 import { CameraRig, ShakeRig } from '../systems/CameraRig';
 import { Hud } from '../systems/Hud';
+import { Ragdoll } from '../systems/Ragdoll';
 import { VfxSystem } from '../systems/Vfx';
 import { createSeededRandom } from '../utils/random';
 import { createSky, Environment } from '../world/Environment';
 import { Track } from '../world/Track';
 import { FIXED_DT } from './config';
 
-type Mode = 'menu' | 'ride' | 'pause' | 'fail' | 'win';
+type Mode = 'menu' | 'ride' | 'pause' | 'crash' | 'fail' | 'win';
+
+const WIND = new THREE.Vector2(0.9, 0.35);
 
 const VignetteShader = {
   uniforms: { tDiffuse: { value: null }, uStrength: { value: 0.35 }, uSize: { value: 0.78 } },
@@ -50,6 +55,7 @@ export class Game {
   private env: Environment;
   private sim: BikeSim;
   private bike: BikeRig;
+  private ragdoll: Ragdoll;
   private rng = createSeededRandom(27);
   private mode: Mode = 'menu';
   private skill: SkillMode = 'assist';
@@ -60,10 +66,13 @@ export class Game {
   private crashes = 0;
   private lastSector = 0;
   private respawnS = 0;
+  private crashTimer = 0;
   private pausedForScreenshot = false;
   private reducedMotion = false;
   private timeScale = 1;
   private hitstopRemaining = 0;
+  private afterimage: AfterimagePass | null = null;
+  private chromatic: ShaderPass | null = null;
   private debug: GUI | null = null;
   private readonly tuning = { exposure: 1.08, maxDpr: 1.5 };
 
@@ -100,8 +109,10 @@ export class Game {
     this.sim = new BikeSim(this.track, start.position.clone().add(new THREE.Vector3(0, 0.7, 0)), Math.atan2(start.tangent.x, start.tangent.z));
     this.bike = createBike(this.mats);
     this.scene.add(this.bike.root);
+    this.ragdoll = new Ragdoll(this.mats, this.track);
+    this.scene.add(this.ragdoll.group);
 
-    this.cameraRig = new CameraRig(this.camera);
+    this.cameraRig = new CameraRig(this.camera, this.track);
     this.cameraRig.snap(this.sim.state);
 
     this.input = new InputController(
@@ -151,6 +162,7 @@ export class Game {
     this.loop.stop();
     this.input.dispose();
     this.audio.dispose();
+    this.ragdoll.dispose();
     this.debug?.destroy();
     this.mats.dispose();
     this.renderer.dispose();
@@ -175,11 +187,14 @@ export class Game {
     if (ui.start && this.mode === 'menu') this.beginRun();
     if (ui.pause && this.mode === 'ride') this.setMode('pause');
     else if (ui.pause && this.mode === 'pause') this.setMode('ride');
-    if (ui.restart) this.beginRun();
+    if (ui.restart && (this.mode === 'ride' || this.mode === 'pause' || this.mode === 'crash')) this.beginRun();
 
     if (this.hitstopRemaining > 0) {
       this.hitstopRemaining -= delta;
-      if (this.hitstopRemaining <= 0) this.timeScale = 1;
+      if (this.hitstopRemaining <= 0) {
+        this.timeScale = 1;
+        this.audio.setDuck(1);
+      }
     }
     const gdt = delta * this.timeScale;
     const animElapsed = this.reducedMotion ? 0 : elapsed;
@@ -194,13 +209,20 @@ export class Game {
       this.syncBike(gdt);
       this.followSun();
       this.env.tick(animElapsed);
-      this.vfx.update(gdt);
+      this.track.tickClouds(this.elapsed, WIND);
+      this.vfx.update(gdt, this.camera.position, this.rng);
 
       const st = this.sim.state;
       if (st.grounded && st.slip > 0.28) {
         this.vfx.emitDust(st.pos.clone().add(new THREE.Vector3(0, 0.1, 0)), st.vel, st.slip, this.rng);
       }
       if (this.input.hopReleased && st.airTime < 0.05) this.cameraRig.punch(4);
+
+      // Camera shake from high-frequency fork compression, not position.
+      const forkKick = Math.abs(st.forkVel) + Math.abs(st.rearVel) * 0.6;
+      if (st.grounded && forkKick > 1.1) {
+        this.shake.add(Math.min(0.14, (forkKick - 1.1) * 0.045));
+      }
 
       const sector = Math.floor(st.s * 4);
       if (sector > this.lastSector) {
@@ -210,24 +232,82 @@ export class Game {
         this.hud.banner(this.el('#sector-label').textContent ?? 'SECTOR');
         this.shake.add(0.12);
       }
-      if (st.crashed && this.mode === 'ride') this.onCrash();
       if (st.s > 0.97 && this.mode === 'ride') this.onFinish();
+      else if (st.crashed && this.mode === 'ride') this.onCrash();
+    } else if (this.mode === 'crash') {
+      // Ragdoll fail-state: rider tumbles, bike keeps its inertia, the
+      // camera stays on the rider until the fail overlay shows.
+      this.accum += Math.min(gdt, 0.1);
+      while (this.accum >= FIXED_DT) {
+        this.sim.step(0, 0, false, false, this.skill);
+        this.accum -= FIXED_DT;
+      }
+      this.ragdoll.update(gdt);
+      this.crashTimer -= gdt;
+      if (this.crashTimer <= 0) {
+        this.hud.setFail(this.sim.state.crashReason);
+        this.setMode('fail');
+      }
+      this.syncBike(gdt);
+      this.followSun();
+      this.env.tick(animElapsed);
+      this.track.tickClouds(this.elapsed, WIND);
+      this.vfx.update(gdt, this.camera.position, this.rng);
     } else {
       this.syncBike(0);
       this.env.tick(animElapsed);
+      this.track.tickClouds(this.elapsed, WIND);
+      this.vfx.update(gdt, this.camera.position, this.rng);
     }
 
-    this.cameraRig.update(delta, this.sim.state, this.reducedMotion);
+    if (this.mode === 'crash' && this.ragdoll.active) {
+      // Keep the camera on the rider: slow chase toward the ragdoll focus.
+      const target = this.ragdoll.focus.clone().add(new THREE.Vector3(0, 1.1, 2.4));
+      const lag = 1 - Math.exp(-delta / 0.16);
+      this.camera.position.lerp(target, lag);
+      this.camera.lookAt(this.ragdoll.focus);
+    } else {
+      this.cameraRig.update(delta, this.sim.state, this.reducedMotion);
+    }
     this.shake.update(delta, this.camera, this.reducedMotion);
-    this.audio.setLayers(this.sim.state.vel.length(), this.sim.state.slip, this.sim.state.grounded, this.sim.state.airTime);
+    const st = this.sim.state;
+    const breath = THREE.MathUtils.clamp(
+      st.slip * 1.3 + (st.airTime > 0.7 ? 0.4 : 0) + (this.mode === 'crash' ? 0.9 : 0),
+      0,
+      1,
+    );
+    this.audio.setLayers(
+      st.vel.length(),
+      st.slip,
+      st.grounded,
+      st.airTime,
+      (st.omegaF + st.omegaR) * 0.5,
+      breath,
+    );
     this.hud.update(this.sim.state, this.elapsed, elapsed);
     this.publish();
   }
 
   private render(): void {
     this.renderer.info.reset();
-    if (this.composer && this.quality === 'high') this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+    if (this.composer && this.quality === 'high') {
+      if (this.afterimage) {
+        // AfterimageShader: higher damp = stronger persistence. Scale it with
+        // camera velocity only — standing still must leave no trail.
+        const speed = this.sim.state.vel.length();
+        const damp = THREE.MathUtils.clamp(0.18 + speed * 0.012, 0.18, 0.72);
+        this.afterimage.uniforms['damp'].value = damp;
+      }
+      if (this.chromatic) {
+        const speed = this.sim.state.vel.length();
+        const amount = this.shake.level * 0.004 + Math.min(0.002, speed * 0.00006);
+        this.chromatic.uniforms['amount'].value = amount;
+        this.chromatic.uniforms['angle'].value = this.sim.state.lean * 0.4;
+      }
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
   }
 
   private syncBike(dt: number): void {
@@ -246,9 +326,10 @@ export class Game {
     const crouch = (this.input.brake > 0 ? 0.12 : 0) + (st.airTime > 0.1 ? 0.1 : 0) + st.hopCharge * 0.14;
     this.bike.torso.rotation.x = 0.35 + crouch;
     this.bike.rider.position.y = 0.9 - crouch * 0.4;
+    // Runtime sockets: hands to grips, feet to pedals, every frame.
+    applyRiderPose(this.bike, crouch);
     if (st.crashed) {
       root.rotation.z += dt * 1.8;
-      this.bike.rider.rotation.x += dt * 2.4;
     }
   }
 
@@ -262,12 +343,15 @@ export class Game {
   private beginRun(): void {
     this.audio.unlock();
     this.audio.ui(this.rng);
-    const start = this.track.sampleAt(this.respawnS > 0.02 && this.mode === 'fail' ? this.respawnS : 0.012);
+    const start = this.track.sampleAt(this.respawnS > 0.02 && (this.mode === 'fail' || this.mode === 'crash') ? this.respawnS : 0.012);
     const yaw = Math.atan2(start.tangent.x, start.tangent.z);
     this.sim.reset(start.position.clone().add(new THREE.Vector3(0, 0.72, 0)), yaw);
     this.sim.state.vel.copy(start.tangent).multiplyScalar(4.5);
     this.bike.rider.rotation.set(0, 0, 0);
-    this.elapsed = this.respawnS > 0.02 && this.mode === 'fail' ? this.elapsed : 0;
+    this.bike.rider.visible = true;
+    this.ragdoll.hide();
+    this.crashTimer = 0;
+    this.elapsed = this.respawnS > 0.02 && (this.mode === 'fail' || this.mode === 'crash') ? this.elapsed : 0;
     if (this.mode !== 'fail') {
       this.crashes = 0;
       this.lastSector = 0;
@@ -282,12 +366,22 @@ export class Game {
     this.crashes += 1;
     this.hitstopRemaining = 0.08;
     this.timeScale = 0.08;
+    this.audio.setDuck(0.35);
     this.shake.add(0.55);
     this.audio.impact(0.9, this.rng);
     this.vfx.burst(this.sim.state.pos, this.rng);
     this.flash();
-    this.hud.setFail(this.sim.state.crashReason);
-    this.setMode('fail');
+    // Live procedural pose → capsule ragdoll with the bike's momentum.
+    const st = this.sim.state;
+    this.ragdoll.spawn(
+      st.pos.clone().add(new THREE.Vector3(0, 0.55, 0)),
+      st.vel.clone(),
+      st.yaw,
+      this.rng,
+    );
+    this.bike.rider.visible = false;
+    this.crashTimer = 1.25;
+    this.setMode('crash');
   }
 
   private onFinish(): void {
@@ -316,10 +410,20 @@ export class Game {
     if (q.post) {
       this.composer = new EffectComposer(this.renderer);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
+      // Light motion blur by camera velocity — no fat bloom, grit survives.
+      this.afterimage = new AfterimagePass(0.94);
+      this.composer.addPass(this.afterimage);
+      // Chromatic aberration only on impacts/speed, then vignette.
+      this.chromatic = new ShaderPass(RGBShiftShader);
+      this.chromatic.uniforms['amount'].value = 0.0012;
+      this.chromatic.uniforms['angle'].value = 0;
+      this.composer.addPass(this.chromatic);
       this.composer.addPass(new ShaderPass(VignetteShader));
       this.composer.addPass(new OutputPass());
     } else {
       this.composer = null;
+      this.afterimage = null;
+      this.chromatic = null;
     }
     resizeRenderer(this.renderer, this.camera, q.maxDpr);
   }
@@ -411,10 +515,11 @@ export class Game {
       physics: {
         engine: 'custom-raycast-heightfield',
         timestep: FIXED_DT,
-        bodies: 1,
-        colliders: 2,
+        bodies: this.ragdoll.active ? 12 : 1,
+        colliders: this.ragdoll.active ? 13 : 2,
         ccd: false,
         sensors: 4,
+        ragdoll: this.ragdoll.active,
       },
       player: {
         position: { x: st.pos.x, y: st.pos.y, z: st.pos.z },
