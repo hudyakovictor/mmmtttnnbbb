@@ -16,6 +16,7 @@ export class InputController {
   startPressed = false;
   pausePressed = false;
   restartPressed = false;
+  cameraPressed = false;
 
   private readonly keys = new Set<string>();
   private readonly pointer = new THREE.Vector2();
@@ -35,6 +36,7 @@ export class InputController {
     this.keys.add(event.code);
     if (event.code === 'Escape') this.pausePressed = true;
     if (event.code === 'KeyR') this.restartPressed = true;
+    if (event.code === 'KeyC') this.cameraPressed = true;
     if (event.code === 'Enter' || event.code === 'KeyE') this.startPressed = true;
     if (event.code === 'Space') event.preventDefault();
   };
@@ -112,15 +114,17 @@ export class InputController {
     this.hopWasHeld = hop;
   }
 
-  consumeUi(): { start: boolean; pause: boolean; restart: boolean } {
+  consumeUi(): { start: boolean; pause: boolean; restart: boolean; camera: boolean } {
     const flags = {
       start: this.startPressed,
       pause: this.pausePressed,
       restart: this.restartPressed,
+      camera: this.cameraPressed,
     };
     this.startPressed = false;
     this.pausePressed = false;
     this.restartPressed = false;
+    this.cameraPressed = false;
     return flags;
   }
 

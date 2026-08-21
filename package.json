@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5188",
     "build": "tsc && vite build",
+    "build:pages": "vite build --sourcemap false --outDir docs --emptyOutDir false",
+    "build:standalone": "vite build --mode standalone --sourcemap false --outDir standalone --emptyOutDir false",
     "preview": "vite preview --host 0.0.0.0 --port 4188",
     "test": "playwright test",
     "verify:visual": "playwright test tests/visual.spec.ts",
@@ -22,6 +24,7 @@
     "@types/three": "^0.184.1",
     "pngjs": "^7.0.0",
     "typescript": "^5.9.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vite-plugin-singlefile": "^2.3.3"
   }
 }

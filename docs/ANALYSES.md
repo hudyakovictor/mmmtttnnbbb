@@ -16,7 +16,7 @@ Compared: zip versions in this repo, Terrain Rider / Summit Rush / Eternal Ride 
 12. **Biome readability.** Trees are walls. Instanced pines with wind sway matter more than a horizon forest.
 13. **Shaders.** Custom terrain blend (dirt / packed / rock) via `onBeforeCompile` + vertex trail/rock/AO. Bike uses cookbook PBR roles (paint, rubber, trim, cloth, glass).
 14. **Atmosphere.** Gradient sky + ACES + fog closer than “pretty” to hide far LOD. No fat bloom. High tier: vignette only.
-15. **Camera.** Chase + spline lookahead analog (forward look), FOV(speed), roll(lean), trauma shake from impacts/fork, air pull-back.
+15. **Camera.** Task is a *first-person* descent: POV helmet cam is the default (look down the fall line, handlebar cockpit in frame, follows fork sag and hop crouch), chase kept as an option (menu select / `C`). FOV(speed), roll(lean), trauma shake from impacts/fork, air pull-back.
 16. **Audio.** ElevenLabs missing. Procedural layers: wind(airspeed), roll(contact×speed), skid(slip), impacts, UI. Slip is heard before it is seen.
 17. **Quality tiers.** View distance/density/shadows/grass/post. Physics timestep and colliders identical on all GPUs.
 18. **UI.** Not stat cards. Speed arc, fork wells, slip bar, sector ribbon, minimap, lean needle, menu/pause/fail/win, 44px touch.

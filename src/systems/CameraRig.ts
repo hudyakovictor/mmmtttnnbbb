@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import type { SimState } from './BikeSim';
 
+export type CameraMode = 'pov' | 'chase';
+
 export class CameraRig {
+  mode: CameraMode = 'pov';
   private readonly desired = new THREE.Vector3();
   private readonly look = new THREE.Vector3();
   private readonly up = new THREE.Vector3(0, 1, 0);
@@ -21,6 +24,44 @@ export class CameraRig {
   }
 
   update(delta: number, state: SimState, reducedMotion: boolean): void {
+    if (this.mode === 'pov') this.updatePov(delta, state, reducedMotion);
+    else this.updateChase(delta, state, reducedMotion);
+
+    this.fovPunch *= Math.exp(-delta / 0.22);
+    if (this.fovPunch < 0.02) this.fovPunch = 0;
+  }
+
+  /** First-person: helmet cam on the rider's head, look down the fall line. */
+  private updatePov(delta: number, state: SimState, reducedMotion: boolean): void {
+    const fwd = new THREE.Vector3(Math.sin(state.yaw), 0, Math.cos(state.yaw));
+    const speed = state.vel.length();
+    // Eye height: rider torso + head, minus hop preload crouch and suspension sag.
+    const eyeHeight = 1.36 - state.hopCharge * 0.14 - state.fork * 0.1 - state.rear * 0.05;
+    this.desired.copy(state.pos)
+      .addScaledVector(fwd, 0.24)
+      .addScaledVector(this.up, eyeHeight)
+      .addScaledVector(this.up, -Math.min(0.3, Math.abs(speed)) * 0.006 * Math.sin(speed * 1.7));
+    this.look.copy(this.desired)
+      .addScaledVector(fwd, 12)
+      // Nose-down pitch (positive when descending) tilts the view into the trail.
+      .addScaledVector(this.up, -state.pitch * 9 - speed * 0.04);
+
+    const lag = reducedMotion ? 1 : 1 - Math.exp(-delta / 0.055);
+    this.camera.position.lerp(this.desired, lag);
+    this.camera.up.set(0, 1, 0);
+    this.camera.lookAt(this.look);
+    // The head stays more level than the bike: partial lean roll only.
+    this.camera.rotateZ(-state.lean * 0.18);
+
+    const fov = this.baseFov + 4 + speed * 0.7 + this.fovPunch;
+    if (Math.abs(this.camera.fov - fov) > 0.05) {
+      this.camera.fov = fov;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
+  /** Third-person chase: behind the bike, speed-scaled pull-back. */
+  private updateChase(delta: number, state: SimState, reducedMotion: boolean): void {
     const fwd = new THREE.Vector3(Math.sin(state.yaw), 0, Math.cos(state.yaw));
     const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
     const speed = state.vel.length();
@@ -40,8 +81,6 @@ export class CameraRig {
     this.camera.lookAt(this.look);
     this.camera.rotateZ(-state.lean * 0.32);
 
-    this.fovPunch *= Math.exp(-delta / 0.22);
-    if (this.fovPunch < 0.02) this.fovPunch = 0;
     const fov = this.baseFov + speed * 0.55 + this.fovPunch;
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov = fov;
