@@ -12,7 +12,7 @@ import { Loop } from '../core/Loop';
 import { createRenderer, qualitySettings, resizeRenderer, type QualityTier } from '../core/Renderer';
 import { AudioSystem } from '../systems/AudioSystem';
 import { BikeSim, type SkillMode } from '../systems/BikeSim';
-import { CameraRig, ShakeRig } from '../systems/CameraRig';
+import { CameraRig, ShakeRig, type CameraMode } from '../systems/CameraRig';
 import { Hud } from '../systems/Hud';
 import { VfxSystem } from '../systems/Vfx';
 import { createSeededRandom } from '../utils/random';
@@ -44,6 +44,7 @@ export class Game {
   private readonly hud: Hud;
   private readonly sun: THREE.DirectionalLight;
   private readonly fill: THREE.HemisphereLight;
+  private readonly cockpit: THREE.Group;
   private composer: EffectComposer | null = null;
 
   private track: Track;
@@ -54,6 +55,7 @@ export class Game {
   private mode: Mode = 'menu';
   private skill: SkillMode = 'assist';
   private quality: QualityTier = 'med';
+  private camMode: CameraMode = 'pov';
   private frame = 0;
   private elapsed = 0;
   private accum = 0;
@@ -100,9 +102,16 @@ export class Game {
     this.sim = new BikeSim(this.track, start.position.clone().add(new THREE.Vector3(0, 0.7, 0)), Math.atan2(start.tangent.x, start.tangent.z));
     this.bike = createBike(this.mats);
     this.scene.add(this.bike.root);
+    this.bike.rider.visible = false; // POV is the default camera; rider hidden until chase.
 
     this.cameraRig = new CameraRig(this.camera);
     this.cameraRig.snap(this.sim.state);
+
+    // First-person cockpit (handlebar) rendered in camera space; hidden in chase.
+    this.scene.add(this.camera);
+    this.cockpit = createCockpit(this.mats);
+    this.camera.add(this.cockpit);
+    this.cockpit.visible = this.cameraRig.mode === 'pov';
 
     this.input = new InputController(
       this.el('#touch-stick'),
@@ -176,6 +185,7 @@ export class Game {
     if (ui.pause && this.mode === 'ride') this.setMode('pause');
     else if (ui.pause && this.mode === 'pause') this.setMode('ride');
     if (ui.restart) this.beginRun();
+    if (ui.camera && this.mode === 'ride') this.toggleCamera();
 
     if (this.hitstopRemaining > 0) {
       this.hitstopRemaining -= delta;
@@ -278,6 +288,15 @@ export class Game {
     this.hud.banner('DROP IN');
   }
 
+  private toggleCamera(): void {
+    this.camMode = this.camMode === 'pov' ? 'chase' : 'pov';
+    this.cameraRig.mode = this.camMode;
+    this.cockpit.visible = this.camMode === 'pov';
+    this.bike.rider.visible = this.camMode === 'chase';
+    this.audio.ui(this.rng);
+    this.hud.banner(this.camMode === 'pov' ? 'POV — 1ST PERSON' : 'CHASE CAM');
+  }
+
   private onCrash(): void {
     this.crashes += 1;
     this.hitstopRemaining = 0.08;
@@ -306,6 +325,13 @@ export class Game {
     el.animate([{ opacity: 0.55 }, { opacity: 0 }], { duration: 110, easing: 'ease-out' });
   }
 
+  private applyCamera(mode: CameraMode): void {
+    this.camMode = mode;
+    this.cameraRig.mode = mode;
+    this.cockpit.visible = mode === 'pov';
+    this.bike.rider.visible = mode === 'chase';
+  }
+
   private applyQuality(tier: QualityTier): void {
     this.quality = tier;
     const q = qualitySettings(tier);
@@ -328,6 +354,7 @@ export class Game {
     this.el('#ride-button').addEventListener('click', () => {
       this.skill = (this.el('#skill-select') as HTMLSelectElement).value as SkillMode;
       this.applyQuality((this.el('#quality-select') as HTMLSelectElement).value as QualityTier);
+      this.applyCamera((this.el('#camera-select') as HTMLSelectElement).value as CameraMode);
       this.respawnS = 0;
       this.beginRun();
     });
@@ -403,6 +430,7 @@ export class Game {
       mode: this.mode,
       skill: this.skill,
       quality: this.quality,
+      camera: this.camMode,
       surface: st.surface,
       lean: st.lean,
       slip: st.slip,
@@ -442,4 +470,37 @@ export class Game {
     if (!n) throw new Error(`Missing ${sel}`);
     return n;
   }
+}
+
+/** Handlebar cockpit rendered in camera space for the first-person view. */
+function createCockpit(mats: MaterialLibrary): THREE.Group {
+  const group = new THREE.Group();
+
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.62, 8), mats.bodySecondary);
+  bar.rotation.z = Math.PI / 2;
+  bar.position.set(0, -0.15, -0.5);
+  group.add(bar);
+
+  const gripGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.13, 8);
+  const gripL = new THREE.Mesh(gripGeo, mats.rubber);
+  gripL.rotation.z = Math.PI / 2;
+  gripL.position.set(-0.27, -0.15, -0.5);
+  const gripR = gripL.clone();
+  gripR.position.x = 0.27;
+  group.add(gripL, gripR);
+
+  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.12), mats.trim);
+  stem.position.set(0, -0.25, -0.43);
+  stem.rotation.x = -0.5;
+  group.add(stem);
+
+  const tubeGeo = new THREE.CylinderGeometry(0.013, 0.013, 0.2, 6);
+  for (const side of [-1, 1]) {
+    const tube = new THREE.Mesh(tubeGeo, mats.trim);
+    tube.position.set(side * 0.06, -0.24, -0.46);
+    tube.rotation.x = 0.7;
+    group.add(tube);
+  }
+
+  return group;
 }

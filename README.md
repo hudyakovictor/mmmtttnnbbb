@@ -16,11 +16,12 @@ Open the preview URL. **RIDE** to drop in.
 | A / D or arrows | Steer / lean |
 | S / Down | Brake |
 | Space (hold / release) | Bunny hop preload / pop |
+| C | Camera: 1st person / chase |
 | Esc | Pause |
 | R | Restart |
 | Touch | Stick, BRAKE, HOP |
 
-**Trail assist** hides a ~20 cm rail so the bike stays on the singletrack. **Pro** turns it off.
+The run defaults to **1st person** (helmet cam with handlebar in frame) — the task is a first-person descent. Chase cam is selectable in the menu or with `C`. **Trail assist** hides a ~20 cm rail so the bike stays on the singletrack. **Pro** turns it off.
 
 ## Stack
 

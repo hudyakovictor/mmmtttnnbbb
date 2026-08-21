@@ -9,6 +9,7 @@ interface ThreeGameDiagnostics {
   mode: string;
   skill: string;
   quality: string;
+  camera: string;
   surface: string;
   lean: number;
   slip: number;
