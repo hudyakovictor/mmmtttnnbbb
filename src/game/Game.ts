@@ -94,7 +94,9 @@ export class Game {
     this.scene.add(createSky());
 
     this.track = new Track(this.mats);
-    this.env = new Environment(this.track, this.mats, this.rng, 0.75, false);
+    this.quality = this.detectQuality();
+    const envQ = qualitySettings(this.quality);
+    this.env = new Environment(this.track, this.mats, this.rng, envQ.treeScale, envQ.grass);
     this.scene.add(this.env.group);
     this.scene.add(this.vfx.group);
 
@@ -144,7 +146,8 @@ export class Game {
     );
 
     this.bindUi();
-    this.applyQuality('med');
+    this.applyQuality(this.quality);
+    (this.el('#quality-select') as HTMLSelectElement).value = this.quality;
     this.loop = new Loop((d, e) => this.update(d, e), () => this.render());
     this.installHooks();
     this.publish();
@@ -330,6 +333,18 @@ export class Game {
     this.cameraRig.mode = mode;
     this.cockpit.visible = mode === 'pov';
     this.bike.rider.visible = mode === 'chase';
+  }
+
+  /** Mobile/weak devices default to Low (no shadows, DPR 1): the game must not hang on phones. */
+  private detectQuality(): QualityTier {
+    const params = new URLSearchParams(location.search);
+    const forced = params.get('quality');
+    if (forced === 'low' || forced === 'med' || forced === 'high') return forced;
+    const nav = navigator as Navigator & { deviceMemory?: number };
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const smallScreen = Math.min(window.screen?.width ?? 0, window.screen?.height ?? 0) < 480;
+    if (coarse || smallScreen || (nav.deviceMemory !== undefined && nav.deviceMemory < 4)) return 'low';
+    return 'med';
   }
 
   private applyQuality(tier: QualityTier): void {
