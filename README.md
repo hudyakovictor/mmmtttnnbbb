@@ -2,14 +2,20 @@
 
 Whistler-class downhill mountain bike game in the browser. Corridor of speed: spline trail, shared heightfield, raycast DH bike, alpine pine walls.
 
-## Play
+## Запуск (без установки)
+
+1. **Один файл:** скачайте [`FALL-LINE.html`](./FALL-LINE.html) (на GitHub: открыть файл → кнопка Download) и откройте двойным кликом — игра запустится офлайн, всё встроено.
+2. **Онлайн-ссылка:** включите GitHub Pages в настройках репозитория: Settings → Pages → *Deploy from a branch* → ветка `arena/01a024ba-mmmtttnnbbb` → папка `/docs` → Save. Сборка уже лежит в `docs/`, сайт появится на `https://hudyakovictor.github.io/mmmtttnnbbb/`.
+3. **Локально:** `npm install && npm run dev` и откройте адрес из вывода.
+
+## Play (local)
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open the preview URL. **RIDE** to drop in.
+Open the preview URL. **RIDE** to drop in. The run defaults to **1st person** (helmet cam, handlebar in frame); `C` or the menu switches to chase.
 
 | Input | Action |
 | --- | --- |

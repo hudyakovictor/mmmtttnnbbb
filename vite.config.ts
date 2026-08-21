@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
+import { viteSingleFile } from 'vite-plugin-singlefile';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
+  plugins: mode === 'standalone' ? [viteSingleFile()] : [],
   server: {
     host: '0.0.0.0',
     port: 5188,
@@ -18,4 +20,4 @@ export default defineConfig({
     sourcemap: true,
     chunkSizeWarningLimit: 900,
   },
-});
+}));
