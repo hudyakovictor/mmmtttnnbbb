@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a1610" />
+    <title>FALL LINE — Alpine Downhill</title>
+    <script type="module" crossorigin src="./assets/index-2Gi0AcQW.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-bjOXH6X_.css">
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="game-canvas" aria-label="Fall Line downhill mountain bike game"></canvas>
+
+      <section id="hud" aria-live="polite">
+        <div class="hud-cluster hud-left">
+          <div class="speedo" id="speedo">
+            <svg viewBox="0 0 120 78" aria-hidden="true">
+              <path class="speedo-track" d="M10 68 A50 50 0 0 1 110 68" />
+              <path id="speedo-fill" class="speedo-fill" d="M10 68 A50 50 0 0 1 110 68" />
+            </svg>
+            <div class="speedo-read">
+              <strong id="speed-value">00</strong>
+              <span>km/h</span>
+            </div>
+          </div>
+          <div class="fork-cluster" title="Fork / shock travel">
+            <div class="fork-col">
+              <span>F</span>
+              <div class="fork-well"><div id="fork-front" class="fork-fill"></div></div>
+            </div>
+            <div class="fork-col">
+              <span>R</span>
+              <div class="fork-well"><div id="fork-rear" class="fork-fill"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hud-cluster hud-center">
+          <div class="sector-ribbon">
+            <span id="sector-label">S1 · START GATE</span>
+            <div class="sector-track">
+              <div id="sector-fill"></div>
+            </div>
+          </div>
+          <div class="timer-block">
+            <span>RUN</span>
+            <strong id="timer-value">00:00.0</strong>
+          </div>
+        </div>
+
+        <div class="hud-cluster hud-right">
+          <button id="pause-button" type="button" class="icon-btn" aria-label="Pause">II</button>
+          <div class="slip-meter">
+            <span>SLIP</span>
+            <div class="slip-well"><div id="slip-fill"></div></div>
+          </div>
+          <div class="surface-badge" id="surface-badge">PACKED</div>
+          <canvas id="minimap" width="148" height="148" aria-hidden="true"></canvas>
+        </div>
+      </section>
+
+      <div id="lean-bar" aria-hidden="true"><i id="lean-needle"></i></div>
+      <div id="status-line">HOLD THE FALL LINE</div>
+      <div id="flash" aria-hidden="true"></div>
+
+      <section id="overlay" class="overlay">
+        <div class="plate">
+          <p class="kicker">WHISTLER-CLASS SINGLETRACK</p>
+          <h1>FALL LINE</h1>
+          <p class="lede">
+            Corridor of speed. Packed dirt, berms, roots, a drop, then the finish gate.
+            Gravity is free. Grip is not.
+          </p>
+          <div class="row">
+            <label>
+              Camera
+              <select id="camera-select">
+                <option value="pov" selected>1st person</option>
+                <option value="chase">Chase</option>
+              </select>
+            </label>
+            <label>
+              Assist
+              <select id="skill-select">
+                <option value="assist" selected>Trail assist</option>
+                <option value="pro">Pro — no rail</option>
+              </select>
+            </label>
+            <label>
+              Quality
+              <select id="quality-select">
+                <option value="low">Low</option>
+                <option value="med" selected>Med</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+          </div>
+          <div class="actions">
+            <button id="ride-button" type="button" class="primary">RIDE</button>
+            <button id="how-button" type="button" class="ghost">CONTROLS</button>
+          </div>
+          <p id="how-copy" class="how hidden">
+            Steer A/D or arrows · Brake S · Hop Space (hold to preload) · Camera C · Pause Esc · Restart R.
+            Touch: stick, brake, hop. Easy mode keeps a hidden 20 cm rail. Pro does not.
+          </p>
+        </div>
+      </section>
+
+      <section id="pause-overlay" class="overlay hidden">
+        <div class="plate slim">
+          <h2>PAUSED</h2>
+          <div class="actions">
+            <button id="resume-button" type="button" class="primary">RESUME</button>
+            <button id="restart-pause" type="button" class="ghost">RESTART</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="fail-overlay" class="overlay hidden">
+        <div class="plate slim">
+          <p class="kicker danger">WASHED OUT</p>
+          <h2 id="fail-title">LOW-SIDE</h2>
+          <p id="fail-copy">The bike kept going. You did not.</p>
+          <div class="actions">
+            <button id="retry-button" type="button" class="primary">RETRY SECTOR</button>
+            <button id="menu-fail" type="button" class="ghost">MENU</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="win-overlay" class="overlay hidden">
+        <div class="plate slim">
+          <p class="kicker reward">FINISH GATE</p>
+          <h2>CLEAN RUN</h2>
+          <p id="win-copy">00:00.0</p>
+          <div class="actions">
+            <button id="again-button" type="button" class="primary">RIDE AGAIN</button>
+            <button id="menu-win" type="button" class="ghost">MENU</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="touch-controls" aria-hidden="true">
+        <div id="touch-stick">
+          <div id="touch-knob"></div>
+        </div>
+        <div class="touch-actions">
+          <button id="brake-button" type="button">BRAKE</button>
+          <button id="hop-button" type="button">HOP</button>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

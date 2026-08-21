@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5188",
     "build": "tsc && vite build",
+    "build:pages": "vite build --sourcemap false --outDir docs --emptyOutDir false",
     "preview": "vite preview --host 0.0.0.0 --port 4188",
     "test": "playwright test",
     "verify:visual": "playwright test tests/visual.spec.ts",
