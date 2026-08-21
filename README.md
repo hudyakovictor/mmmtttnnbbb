@@ -4,9 +4,10 @@ Whistler-class downhill mountain bike game in the browser. Corridor of speed: sp
 
 ## Запуск (без установки)
 
-1. **Один файл:** скачайте [`FALL-LINE.html`](./FALL-LINE.html) (на GitHub: открыть файл → кнопка Download) и откройте двойным кликом — игра запустится офлайн, всё встроено.
-2. **Онлайн-ссылка:** включите GitHub Pages в настройках репозитория: Settings → Pages → *Deploy from a branch* → ветка `arena/01a024ba-mmmtttnnbbb` → папка `/docs` → Save. Сборка уже лежит в `docs/`, сайт появится на `https://hudyakovictor.github.io/mmmtttnnbbb/`.
-3. **Локально:** `npm install && npm run dev` и откройте адрес из вывода.
+1. **Прямая ссылка (телефон/ПК):** <https://cdn.jsdelivr.net/gh/hudyakovictor/mmmtttnnbbb@5e8cf56e4a18b44a98867e216b6c9887ebabf9d9/FALL-LINE.html> — вся игра в одном файле, открывается прямо в браузере. На телефонах автоматически включается низкое качество (без теней), чтобы не зависало; принудительно: добавьте `?quality=low` к адресу.
+2. **Один файл:** [`FALL-LINE.html`](./FALL-LINE.html) — скачать и открыть двойным кликом, работает офлайн.
+3. **Онлайн-ссылка:** включите GitHub Pages в настройках репозитория: Settings → Pages → *Deploy from a branch* → ветка `arena/01a024ba-mmmtttnnbbb` → папка `/docs` → Save. Сборка уже лежит в `docs/`, сайт появится на `https://hudyakovictor.github.io/mmmtttnnbbb/`.
+4. **Локально:** `npm install && npm run dev` и откройте адрес из вывода.
 
 ## Play (local)
 
